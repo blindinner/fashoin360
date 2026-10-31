@@ -495,22 +495,18 @@ export default function DesignerShowcaseWebGL() {
     return () => cancelAnimationFrame(rafRef.current);
   }, [mode, selectedIndex, currentIndex, isActive, hoveredIndex]);
 
-  // Intersection observer
+  // Intersection observer - only track visibility, don't block scroll
   useEffect(() => {
     const section = sectionRef.current;
     if (!section) return;
 
     const observer = new IntersectionObserver(
       ([entry]) => {
-        const active = entry.isIntersecting && entry.intersectionRatio > 0.5;
+        const active = entry.isIntersecting && entry.intersectionRatio > 0.3;
         setIsActive(active);
-        if (active) {
-          document.documentElement.classList.add("lenis-stopped");
-        } else {
-          document.documentElement.classList.remove("lenis-stopped");
-        }
+        // Don't add lenis-stopped - let users always scroll vertically
       },
-      { threshold: [0.5] }
+      { threshold: [0.3] }
     );
 
     observer.observe(section);
@@ -548,35 +544,80 @@ export default function DesignerShowcaseWebGL() {
     const container = canvasContainerRef.current;
     if (!container) return;
 
+    // Track touch state separately for better mobile handling
+    const touchState = { startX: 0, startY: 0, startTime: 0, isHorizontalSwipe: false };
+
     const handleWheel = (e: WheelEvent) => {
       if (!isActive || showDetail) return;
-      e.preventDefault();
 
-      if (mode === "strip") {
-        const scroll = scrollRef.current;
-        const delta = e.deltaY || e.deltaX;
-        scroll.targ = Math.max(0, Math.min(scroll.max, scroll.targ + delta));
-      } else {
-        // In project mode, horizontal scroll returns to strip and continues
-        const horizontalDelta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
-
-        if (Math.abs(horizontalDelta) > 20) {
-          // Return to strip and apply scroll
-          setMode("strip");
-          const { panelW, gap } = getPanelDimensions();
+      // Only handle horizontal scrolling, let vertical scroll pass through
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        e.preventDefault();
+        if (mode === "strip") {
           const scroll = scrollRef.current;
-
-          if (selectedIndex !== null) {
-            scroll.curr = selectedIndex * (panelW + gap);
-            scroll.targ = Math.max(0, Math.min(scroll.max, scroll.curr + horizontalDelta));
-          }
-          setSelectedIndex(null);
+          scroll.targ = Math.max(0, Math.min(scroll.max, scroll.targ + e.deltaX));
         }
       }
     };
 
+    const handleTouchStart = (e: TouchEvent) => {
+      if (!isActive || showDetail) return;
+      const touch = e.touches[0];
+      touchState.startX = touch.clientX;
+      touchState.startY = touch.clientY;
+      touchState.startTime = Date.now();
+      touchState.isHorizontalSwipe = false;
+      dragRef.current.startTarg = scrollRef.current.targ;
+      dragRef.current.movedDistance = 0;
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isActive || showDetail) return;
+      const touch = e.touches[0];
+      const dx = touch.clientX - touchState.startX;
+      const dy = touch.clientY - touchState.startY;
+
+      // Determine if this is a horizontal swipe (only once per gesture)
+      if (!touchState.isHorizontalSwipe && Math.abs(dx) > 10) {
+        touchState.isHorizontalSwipe = Math.abs(dx) > Math.abs(dy) * 1.5;
+      }
+
+      if (touchState.isHorizontalSwipe && mode === "strip") {
+        e.preventDefault();
+        dragRef.current.movedDistance = Math.abs(dx);
+        const scroll = scrollRef.current;
+        scroll.targ = Math.max(0, Math.min(scroll.max, dragRef.current.startTarg - dx));
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (!isActive || showDetail) return;
+
+      const touch = e.changedTouches[0];
+      const dx = touch.clientX - touchState.startX;
+      const elapsed = Date.now() - touchState.startTime;
+
+      // Quick tap detection
+      if (dragRef.current.movedDistance < 15 && elapsed < 300) {
+        const clicked = findPanelAtPosition(touch.clientX, touch.clientY);
+        if (clicked !== null) {
+          handlePanelClick(clicked);
+        }
+      }
+
+      // Add momentum for swipe
+      if (touchState.isHorizontalSwipe && mode === "strip" && elapsed < 300) {
+        const velocity = dx / elapsed;
+        const scroll = scrollRef.current;
+        scroll.targ = Math.max(0, Math.min(scroll.max, scroll.targ - velocity * 150));
+      }
+
+      touchState.isHorizontalSwipe = false;
+    };
+
+    // Desktop pointer handlers
     const handlePointerDown = (e: PointerEvent) => {
-      if (!isActive) return;
+      if (!isActive || e.pointerType === "touch") return;
       dragRef.current.active = true;
       dragRef.current.startX = e.clientX;
       dragRef.current.startTarg = scrollRef.current.targ;
@@ -585,6 +626,7 @@ export default function DesignerShowcaseWebGL() {
     };
 
     const handlePointerMove = (e: PointerEvent) => {
+      if (e.pointerType === "touch") return;
       mouseRef.current = { x: e.clientX, y: e.clientY };
 
       // Update hovered panel
@@ -623,6 +665,7 @@ export default function DesignerShowcaseWebGL() {
     };
 
     const handlePointerUp = (e: PointerEvent) => {
+      if (e.pointerType === "touch") return;
       if (dragRef.current.active && dragRef.current.movedDistance < 10) {
         // It was a click
         const clicked = findPanelAtPosition(e.clientX, e.clientY);
@@ -640,6 +683,12 @@ export default function DesignerShowcaseWebGL() {
       dragRef.current.active = false;
     };
 
+    // Touch events for mobile
+    container.addEventListener("touchstart", handleTouchStart, { passive: true });
+    container.addEventListener("touchmove", handleTouchMove, { passive: false });
+    container.addEventListener("touchend", handleTouchEnd, { passive: true });
+
+    // Pointer events for desktop
     container.addEventListener("wheel", handleWheel, { passive: false });
     container.addEventListener("pointerdown", handlePointerDown);
     container.addEventListener("pointermove", handlePointerMove);
@@ -647,6 +696,9 @@ export default function DesignerShowcaseWebGL() {
     container.addEventListener("pointerleave", handlePointerLeave);
 
     return () => {
+      container.removeEventListener("touchstart", handleTouchStart);
+      container.removeEventListener("touchmove", handleTouchMove);
+      container.removeEventListener("touchend", handleTouchEnd);
       container.removeEventListener("wheel", handleWheel);
       container.removeEventListener("pointerdown", handlePointerDown);
       container.removeEventListener("pointermove", handlePointerMove);
@@ -697,7 +749,7 @@ export default function DesignerShowcaseWebGL() {
       <div
         ref={canvasContainerRef}
         className="absolute inset-0 cursor-grab active:cursor-grabbing z-10"
-        style={{ touchAction: "none" }}
+        style={{ touchAction: "pan-y" }}
       >
         <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
       </div>
@@ -792,8 +844,8 @@ export default function DesignerShowcaseWebGL() {
           </div>
         </div>
 
-        {/* Giant Typography - Designer Name (smaller on mobile) */}
-        <div className="absolute inset-0 flex flex-col justify-center px-4 md:px-8" style={{ zIndex: 5 }}>
+        {/* Giant Typography - Designer Name (smaller on mobile, positioned higher) */}
+        <div className="absolute inset-x-0 top-16 bottom-32 md:inset-0 flex flex-col justify-center px-4 md:px-8" style={{ zIndex: 5 }}>
           {nameLines.map((line, lineIndex) => (
             <div
               key={lineIndex}
@@ -809,7 +861,7 @@ export default function DesignerShowcaseWebGL() {
                   className="font-display font-black"
                   style={{
                     color: textColor,
-                    fontSize: "clamp(2.5rem, 12vw, 18rem)",
+                    fontSize: "clamp(2rem, 10vw, 18rem)",
                     lineHeight: 0.85,
                     letterSpacing: "-0.02em",
                     marginRight: "0.2vw",
@@ -822,17 +874,18 @@ export default function DesignerShowcaseWebGL() {
           ))}
         </div>
 
-        {/* Category + Explore Button */}
-        <div className="absolute bottom-4 md:bottom-8 left-4 md:left-8 right-4 md:right-auto flex flex-col md:flex-row items-start md:items-center gap-3 md:gap-6">
+        {/* Category + Explore Button - positioned higher on mobile */}
+        <div className="absolute bottom-20 md:bottom-8 left-4 md:left-8 right-4 md:right-auto flex flex-col md:flex-row items-start md:items-center gap-3 md:gap-6 safe-area-pb">
           <span className="text-[10px] md:text-xs uppercase tracking-[0.3em] font-medium" style={{ color: textColor }}>
             {currentDesigner.category}
           </span>
           <button
             onClick={() => setShowDetail(true)}
-            className="pointer-events-auto w-full md:w-auto px-6 py-3 md:py-2 text-xs uppercase tracking-widest font-medium border transition-all active:scale-95 md:hover:scale-105"
+            className="pointer-events-auto w-full md:w-auto px-6 py-4 md:py-2 text-sm md:text-xs uppercase tracking-widest font-medium border transition-all active:scale-95 md:hover:scale-105"
             style={{
               borderColor: textColor,
               color: textColor,
+              backgroundColor: `${textColor}15`,
             }}
             onMouseEnter={(e) => {
               if (window.innerWidth >= 768) {
@@ -841,11 +894,11 @@ export default function DesignerShowcaseWebGL() {
               }
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.backgroundColor = "transparent";
+              e.currentTarget.style.backgroundColor = `${textColor}15`;
               e.currentTarget.style.color = textColor;
             }}
           >
-            Explore
+            Explore Designer
           </button>
         </div>
 
