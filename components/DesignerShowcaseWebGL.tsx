@@ -132,8 +132,8 @@ export default function DesignerShowcaseWebGL() {
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
 
   // Scroll state
-  const scrollRef = useRef({ targ: 0, curr: 0, lag: 0, latency: 0, bend: 0, rotate: 0, max: 0 });
-  const dragRef = useRef({ active: false, startX: 0, startTarg: 0, movedDistance: 0 });
+  const scrollRef = useRef({ targ: 0, curr: 0, lag: 0, latency: 0, bend: 0, rotate: 0, max: 0, velocity: 0 });
+  const dragRef = useRef({ active: false, startX: 0, startTarg: 0, movedDistance: 0, lastX: 0, lastTime: 0 });
   const mouseRef = useRef({ x: 0, y: 0 });
 
   // Background color (animated)
@@ -415,14 +415,24 @@ export default function DesignerShowcaseWebGL() {
       );
 
       if (mode === "strip") {
-        // Update scroll with damping
-        scroll.curr = damp(scroll.curr, scroll.targ, 0.08, dt);
+        // Apply velocity decay for momentum scrolling
+        if (Math.abs(scroll.velocity) > 0.1) {
+          scroll.targ += scroll.velocity * dt;
+          scroll.targ = Math.max(0, Math.min(scroll.max, scroll.targ));
+          scroll.velocity *= 0.95; // Decay
+        } else {
+          scroll.velocity = 0;
+        }
+
+        // Update scroll with damping - faster on mobile for snappier feel
+        const scrollDamp = isMobileRef.current ? 0.15 : 0.08;
+        scroll.curr = damp(scroll.curr, scroll.targ, scrollDamp, dt);
         scroll.lag = damp(scroll.lag, scroll.targ, 0.05, dt);
         scroll.latency = scroll.targ - scroll.lag;
 
         if (isActive) {
           // Reduce bend effect on mobile for smoother feel
-          const bendFactor = isMobileRef.current ? 600 : 400;
+          const bendFactor = isMobileRef.current ? 800 : 400;
           scroll.bend = Math.min(Math.abs(scroll.latency) / bendFactor, 1);
           scroll.rotate = Math.min(Math.max(scroll.latency / 1000, -1), 1);
         } else {
@@ -438,19 +448,20 @@ export default function DesignerShowcaseWebGL() {
         }
 
         // Update strip panels
+        const panelDamp = isMobileRef.current ? 0.2 : 0.08;
         panels.forEach((p) => {
           p.targetX = p.baseX - scroll.curr;
 
           // Set hover target based on hoveredIndex
           p.targetHover = p.index === hoveredIndex ? 1 : 0;
 
-          // Animate to targets
-          p.x = damp(p.x, p.targetX, 0.08, dt);
-          p.y = damp(p.y, p.targetY, 0.08, dt);
-          p.w = damp(p.w, p.targetW, 0.08, dt);
-          p.h = damp(p.h, p.targetH, 0.08, dt);
+          // Animate to targets - faster on mobile
+          p.x = damp(p.x, p.targetX, panelDamp, dt);
+          p.y = damp(p.y, p.targetY, panelDamp, dt);
+          p.w = damp(p.w, p.targetW, panelDamp, dt);
+          p.h = damp(p.h, p.targetH, panelDamp, dt);
           p.hover = damp(p.hover, p.targetHover, 0.1, dt);
-          p.opacity = damp(p.opacity, p.targetOpacity, 0.08, dt);
+          p.opacity = damp(p.opacity, p.targetOpacity, panelDamp, dt);
 
           // Update mesh
           p.mesh.scale.set(p.w, p.h, 1);
@@ -545,7 +556,13 @@ export default function DesignerShowcaseWebGL() {
     if (!container) return;
 
     // Track touch state separately for better mobile handling
-    const touchState = { startX: 0, startY: 0, startTime: 0, isHorizontalSwipe: false };
+    const touchState = {
+      startX: 0, startY: 0, startTime: 0,
+      lastX: 0, lastTime: 0,
+      isHorizontalSwipe: false,
+      velocityX: 0,
+      samples: [] as { x: number; t: number }[]
+    };
 
     const handleWheel = (e: WheelEvent) => {
       if (!isActive || showDetail) return;
@@ -563,30 +580,50 @@ export default function DesignerShowcaseWebGL() {
     const handleTouchStart = (e: TouchEvent) => {
       if (!isActive || showDetail) return;
       const touch = e.touches[0];
+      const now = Date.now();
+
       touchState.startX = touch.clientX;
       touchState.startY = touch.clientY;
-      touchState.startTime = Date.now();
+      touchState.startTime = now;
+      touchState.lastX = touch.clientX;
+      touchState.lastTime = now;
       touchState.isHorizontalSwipe = false;
-      dragRef.current.startTarg = scrollRef.current.targ;
+      touchState.velocityX = 0;
+      touchState.samples = [{ x: touch.clientX, t: now }];
+
+      // Stop any ongoing momentum
+      scrollRef.current.velocity = 0;
+      dragRef.current.startTarg = scrollRef.current.curr; // Use current position, not target
       dragRef.current.movedDistance = 0;
     };
 
     const handleTouchMove = (e: TouchEvent) => {
       if (!isActive || showDetail) return;
       const touch = e.touches[0];
+      const now = Date.now();
       const dx = touch.clientX - touchState.startX;
       const dy = touch.clientY - touchState.startY;
 
       // Determine if this is a horizontal swipe (only once per gesture)
-      if (!touchState.isHorizontalSwipe && Math.abs(dx) > 10) {
-        touchState.isHorizontalSwipe = Math.abs(dx) > Math.abs(dy) * 1.5;
+      if (!touchState.isHorizontalSwipe && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+        touchState.isHorizontalSwipe = Math.abs(dx) > Math.abs(dy);
       }
 
       if (touchState.isHorizontalSwipe && mode === "strip") {
         e.preventDefault();
         dragRef.current.movedDistance = Math.abs(dx);
+
+        // Track velocity samples (keep last 5)
+        touchState.samples.push({ x: touch.clientX, t: now });
+        if (touchState.samples.length > 5) touchState.samples.shift();
+
+        // Direct 1:1 tracking for responsive feel
         const scroll = scrollRef.current;
         scroll.targ = Math.max(0, Math.min(scroll.max, dragRef.current.startTarg - dx));
+        scroll.curr = scroll.targ; // Immediate response while dragging
+
+        touchState.lastX = touch.clientX;
+        touchState.lastTime = now;
       }
     };
 
@@ -594,7 +631,6 @@ export default function DesignerShowcaseWebGL() {
       if (!isActive || showDetail) return;
 
       const touch = e.changedTouches[0];
-      const dx = touch.clientX - touchState.startX;
       const elapsed = Date.now() - touchState.startTime;
 
       // Quick tap detection
@@ -603,16 +639,40 @@ export default function DesignerShowcaseWebGL() {
         if (clicked !== null) {
           handlePanelClick(clicked);
         }
+        touchState.isHorizontalSwipe = false;
+        return;
       }
 
-      // Add momentum for swipe
-      if (touchState.isHorizontalSwipe && mode === "strip" && elapsed < 300) {
-        const velocity = dx / elapsed;
-        const scroll = scrollRef.current;
-        scroll.targ = Math.max(0, Math.min(scroll.max, scroll.targ - velocity * 150));
+      // Calculate velocity from recent samples for smooth momentum
+      if (touchState.isHorizontalSwipe && mode === "strip" && touchState.samples.length >= 2) {
+        const recent = touchState.samples.slice(-3);
+        const first = recent[0];
+        const last = recent[recent.length - 1];
+        const dt = last.t - first.t;
+
+        if (dt > 0 && dt < 200) {
+          const velocity = (first.x - last.x) / dt; // pixels per ms
+          const scroll = scrollRef.current;
+
+          // Apply momentum
+          scroll.velocity = velocity * 15; // Scale for smooth deceleration
+
+          // Snap to nearest panel after momentum settles
+          const { panelW, gap } = getPanelDimensions();
+          const panelSize = panelW + gap;
+          const projectedPosition = scroll.targ + velocity * 200;
+          const nearestIndex = Math.round(projectedPosition / panelSize);
+          const clampedIndex = Math.max(0, Math.min(designers.length - 1, nearestIndex));
+
+          // Set target to snap position
+          setTimeout(() => {
+            scroll.targ = clampedIndex * panelSize;
+          }, 150);
+        }
       }
 
       touchState.isHorizontalSwipe = false;
+      touchState.samples = [];
     };
 
     // Desktop pointer handlers
