@@ -406,21 +406,8 @@ export default function TypeHelix() {
           </div>
         ))}
 
-        {/* Accessible source text */}
-        <h2
-          data-helix-source
-          className={isReady ? "sr-only" : ""}
-          style={{
-            position: "absolute",
-            top: "50%",
-            left: "50%",
-            transform: "translate(-50%, -50%)",
-            fontSize: "4rem",
-            fontWeight: 900,
-            color: TOKENS.ink,
-            textTransform: "uppercase",
-          }}
-        >
+        {/* Accessible source text - always hidden visually, for screen readers */}
+        <h2 data-helix-source className="sr-only">
           Fashion 360
         </h2>
 
