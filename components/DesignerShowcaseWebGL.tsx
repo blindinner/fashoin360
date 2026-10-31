@@ -309,54 +309,83 @@ export default function DesignerShowcaseWebGL() {
       bgTargetRef.current = { r: 0, g: 0, b: 0 };
 
     } else if (mode === "project" && selectedIndex !== null) {
-      const projectW = PROJECT_W * ratio;
-      const projectH = PROJECT_H * ratio;
-      const panelW = STRIP_PANEL_W * ratio * 2.5;
-      const panelH = PROJECT_H * ratio * 0.9;
-
       // Background to designer's color
       const [bgColor] = getColors(selectedIndex);
       const [r, g, b] = hexToRgb(bgColor);
       bgTargetRef.current = { r, g, b };
 
-      // Selected panel - large, centered, offset right
-      const selected = panels[selectedIndex];
-      const offsetX = vw * 0.08;
-      selected.targetW = projectW;
-      selected.targetH = projectH;
-      selected.targetX = vw / 2 - projectW / 2 + offsetX;
-      selected.targetY = 0;
-      selected.targetHover = 0;
-      selected.targetOpacity = 1;
+      if (isMobile) {
+        // Mobile project mode layout
+        const projectW = vw * 0.85;
+        const projectH = vh * 0.55;
+        const sidePanelW = vw * 0.25;
+        const sidePanelH = vh * 0.35;
 
-      // Layout other panels
-      panels.forEach((p, i) => {
-        if (i === selectedIndex) return;
+        // Selected panel - large, centered
+        const selected = panels[selectedIndex];
+        selected.targetW = projectW;
+        selected.targetH = projectH;
+        selected.targetX = vw / 2 - projectW / 2;
+        selected.targetY = -vh * 0.08; // Slightly above center
+        selected.targetHover = 0;
+        selected.targetOpacity = 1;
 
-        const dist = i - selectedIndex;
-
-        if (dist === 1) {
-          p.targetW = panelW;
-          p.targetH = panelH;
-          p.targetX = vw - panelW * 0.5;
-          p.targetY = vh * 0.05;
-          p.targetHover = 0;
-          p.targetOpacity = 0.9;
-        } else if (dist === -1) {
-          p.targetW = panelW;
-          p.targetH = panelH;
-          p.targetX = -panelW * 0.5;
-          p.targetY = -vh * 0.05;
-          p.targetHover = 0;
-          p.targetOpacity = 0.9;
-        } else {
-          p.targetW = panelW;
-          p.targetH = panelH;
-          p.targetX = dist > 0 ? vw + 200 : -panelW - 200;
+        // Hide all other panels on mobile
+        panels.forEach((p, i) => {
+          if (i === selectedIndex) return;
+          p.targetW = sidePanelW;
+          p.targetH = sidePanelH;
+          p.targetX = i < selectedIndex ? -sidePanelW - 50 : vw + 50;
           p.targetY = 0;
+          p.targetHover = 0;
           p.targetOpacity = 0;
-        }
-      });
+        });
+      } else {
+        // Desktop project mode layout
+        const projectW = PROJECT_W * ratio;
+        const projectH = PROJECT_H * ratio;
+        const panelW = STRIP_PANEL_W * ratio * 2.5;
+        const panelH = PROJECT_H * ratio * 0.9;
+
+        // Selected panel - large, centered, offset right
+        const selected = panels[selectedIndex];
+        const offsetX = vw * 0.08;
+        selected.targetW = projectW;
+        selected.targetH = projectH;
+        selected.targetX = vw / 2 - projectW / 2 + offsetX;
+        selected.targetY = 0;
+        selected.targetHover = 0;
+        selected.targetOpacity = 1;
+
+        // Layout other panels
+        panels.forEach((p, i) => {
+          if (i === selectedIndex) return;
+
+          const dist = i - selectedIndex;
+
+          if (dist === 1) {
+            p.targetW = panelW;
+            p.targetH = panelH;
+            p.targetX = vw - panelW * 0.5;
+            p.targetY = vh * 0.05;
+            p.targetHover = 0;
+            p.targetOpacity = 0.9;
+          } else if (dist === -1) {
+            p.targetW = panelW;
+            p.targetH = panelH;
+            p.targetX = -panelW * 0.5;
+            p.targetY = -vh * 0.05;
+            p.targetHover = 0;
+            p.targetOpacity = 0.9;
+          } else {
+            p.targetW = panelW;
+            p.targetH = panelH;
+            p.targetX = dist > 0 ? vw + 200 : -panelW - 200;
+            p.targetY = 0;
+            p.targetOpacity = 0;
+          }
+        });
+      }
     }
   }, [mode, selectedIndex]);
 
@@ -368,12 +397,7 @@ export default function DesignerShowcaseWebGL() {
   const handlePanelClick = useCallback((index: number) => {
     if (mode === "strip" && dragRef.current.movedDistance < 10) {
       setSelectedIndex(index);
-      // On mobile, skip project mode and go straight to detail panel
-      if (isMobileRef.current) {
-        setShowDetail(true);
-      } else {
-        setMode("project");
-      }
+      setMode("project");
     } else if (mode === "project") {
       // In project mode, clicking a side panel navigates to it
       setSelectedIndex(index);
