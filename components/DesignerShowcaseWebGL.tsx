@@ -515,14 +515,26 @@ export default function DesignerShowcaseWebGL() {
       ([entry]) => {
         const active = entry.isIntersecting && entry.intersectionRatio > 0.3;
         setIsActive(active);
-        // Don't add lenis-stopped - let users always scroll vertically
+
+        // Reset to strip mode when scrolling away from the section
+        if (!active && mode === "project") {
+          setShowDetail(false);
+          setMode("strip");
+          // Reset scroll position to selected designer
+          if (selectedIndex !== null) {
+            const { panelW, gap } = getPanelDimensions();
+            scrollRef.current.targ = selectedIndex * (panelW + gap);
+            scrollRef.current.curr = scrollRef.current.targ;
+          }
+          setSelectedIndex(null);
+        }
       },
       { threshold: [0.3] }
     );
 
     observer.observe(section);
     return () => observer.disconnect();
-  }, []);
+  }, [mode, selectedIndex]);
 
   // Find panel at coordinates
   const findPanelAtPosition = useCallback((clientX: number, clientY: number): number | null => {
