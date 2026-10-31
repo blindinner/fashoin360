@@ -4,6 +4,7 @@ import { useEffect, useState, useRef, Suspense, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { findProductById, getRelatedProducts, formatPrice, type ProductWithDesigner } from "@/lib/utils";
+import ShoppableVideo from "@/components/ShoppableVideo";
 
 const SIZES = ["XS", "S", "M", "L", "XL"];
 
@@ -432,6 +433,15 @@ function ProductPageContent() {
                       : "Designed for those who appreciate both form and function in their wardrobe."
                     }
                   </p>
+                </div>
+
+                {/* Shoppable Video */}
+                <div className="mb-6 lg:mb-10">
+                  <ShoppableVideo
+                    product={product}
+                    relatedProducts={relatedProducts.map(r => r.product)}
+                    accentColor={accentColor}
+                  />
                 </div>
 
                 {/* Size Selection */}
