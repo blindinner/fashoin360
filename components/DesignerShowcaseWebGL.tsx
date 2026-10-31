@@ -368,7 +368,12 @@ export default function DesignerShowcaseWebGL() {
   const handlePanelClick = useCallback((index: number) => {
     if (mode === "strip" && dragRef.current.movedDistance < 10) {
       setSelectedIndex(index);
-      setMode("project");
+      // On mobile, skip project mode and go straight to detail panel
+      if (isMobileRef.current) {
+        setShowDetail(true);
+      } else {
+        setMode("project");
+      }
     } else if (mode === "project") {
       // In project mode, clicking a side panel navigates to it
       setSelectedIndex(index);
