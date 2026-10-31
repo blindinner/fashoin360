@@ -321,13 +321,13 @@ export default function DesignerShowcaseWebGL() {
         const sidePanelW = vw * 0.25;
         const sidePanelH = vh * 0.35;
 
-        // Selected panel - large, centered
+        // Selected panel - large, centered, in color
         const selected = panels[selectedIndex];
         selected.targetW = projectW;
         selected.targetH = projectH;
         selected.targetX = vw / 2 - projectW / 2;
         selected.targetY = -vh * 0.08; // Slightly above center
-        selected.targetHover = 0;
+        selected.targetHover = 1; // Full color
         selected.targetOpacity = 1;
 
         // Hide all other panels on mobile
@@ -347,14 +347,14 @@ export default function DesignerShowcaseWebGL() {
         const panelW = STRIP_PANEL_W * ratio * 2.5;
         const panelH = PROJECT_H * ratio * 0.9;
 
-        // Selected panel - large, centered, offset right
+        // Selected panel - large, centered, offset right, in color
         const selected = panels[selectedIndex];
         const offsetX = vw * 0.08;
         selected.targetW = projectW;
         selected.targetH = projectH;
         selected.targetX = vw / 2 - projectW / 2 + offsetX;
         selected.targetY = 0;
-        selected.targetHover = 0;
+        selected.targetHover = 1; // Full color
         selected.targetOpacity = 1;
 
         // Layout other panels
